@@ -172,7 +172,18 @@ class Controls(ControlsExt):
 
     CC.cruiseControl.override = CC.enabled and not CC.longActive and (self.CP.openpilotLongitudinalControl or not self.CP_SP.pcmCruiseSpeed)
     CC.cruiseControl.cancel = CS.cruiseState.enabled and (not CC.enabled or not self.CP.pcmCruise)
-    CC.cruiseControl.resume = CC.enabled and CS.cruiseState.standstill and not self.sm['longitudinalPlan'].shouldStop
+
+    # Some Hyundai/Kia CAN-FD factory SCC variants drop cruiseState.standstill
+    # shortly before the car actually starts rolling. Keep allowing the guarded
+    # resume-button request while the vehicle itself is still at standstill, but
+    # only after the longitudinal planner has cleared shouldStop. For this
+    # Hyundai-only fallback, require a lead so we don't create a new no-lead
+    # standstill resume path at a light/stop sign.
+    longitudinal_plan = self.sm['longitudinalPlan']
+    hyundai_standstill_resume = (self.CP.brand == "hyundai" and CS.standstill and longitudinal_plan.hasLead and
+                                  not CS.gasPressed and not CS.brakePressed)
+    cruise_standstill = CS.cruiseState.standstill or hyundai_standstill_resume
+    CC.cruiseControl.resume = CC.enabled and cruise_standstill and not longitudinal_plan.shouldStop
 
     hudControl = CC.hudControl
     hudControl.setSpeed = float(CS.vCruiseCluster * CV.KPH_TO_MS)
